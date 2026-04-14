@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
-import { Listing, FilterState } from '@/lib/types'
+import { Listing, FilterState, WalkInfo } from '@/lib/types'
 import FilterBar from '@/components/FilterBar'
 import ListingCard from '@/components/ListingCard'
 
@@ -97,6 +97,7 @@ const DUMMY_LISTINGS: Listing[] = [
 export default function HomePage() {
   const [listings, setListings] = useState<Listing[]>(DUMMY_LISTINGS)
   const [selected, setSelected] = useState<Listing | null>(null)
+  const [walkInfo, setWalkInfo] = useState<WalkInfo | null>(null)
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS)
   const [loading, setLoading] = useState(false)
 
@@ -126,8 +127,9 @@ export default function HomePage() {
     fetchListings()
   }, [fetchListings])
 
-  const handlePinClick = useCallback((listing: Listing) => {
+  const handlePinClick = useCallback((listing: Listing, info: WalkInfo | null) => {
     setSelected(listing)
+    setWalkInfo(info)
   }, [])
 
   return (
@@ -170,7 +172,11 @@ export default function HomePage() {
       {/* Selected listing card */}
       {selected && (
         <div className="absolute bottom-8 right-4 z-20 w-full max-w-sm px-4 sm:px-0">
-          <ListingCard listing={selected} onClose={() => setSelected(null)} />
+          <ListingCard
+            listing={selected}
+            walkInfo={walkInfo}
+            onClose={() => { setSelected(null); setWalkInfo(null) }}
+          />
         </div>
       )}
     </div>

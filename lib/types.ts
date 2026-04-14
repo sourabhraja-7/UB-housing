@@ -72,3 +72,8 @@ export const PIN_COLORS: Record<ListingType, string> = {
   sublease: '#2563eb',
   roommate_needed: '#ea580c',
 }
+
+export interface WalkInfo {
+  distanceMeters: number
+  durationSeconds: number
+}

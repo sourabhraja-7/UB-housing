@@ -1,11 +1,12 @@
 'use client'
 
 import Link from 'next/link'
-import { Listing, LISTING_TYPE_LABELS, LISTING_TYPE_COLORS } from '@/lib/types'
+import { Listing, LISTING_TYPE_LABELS, WalkInfo } from '@/lib/types'
 import { formatWhatsAppUrl, formatDate, daysUntil, daysAgo } from '@/lib/utils'
 
 interface ListingCardProps {
   listing: Listing
+  walkInfo: WalkInfo | null
   onClose: () => void
 }
 
@@ -15,10 +16,17 @@ const TYPE_BG: Record<string, string> = {
   roommate_needed: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
 }
 
-export default function ListingCard({ listing, onClose }: ListingCardProps) {
-  const daysLeft = daysUntil(listing.expires_at)
+function formatWalk(walkInfo: WalkInfo) {
+  const minutes = Math.round(walkInfo.durationSeconds / 60)
+  const miles   = (walkInfo.distanceMeters * 0.000621371).toFixed(2)
+  return { minutes, miles }
+}
+
+export default function ListingCard({ listing, walkInfo, onClose }: ListingCardProps) {
+  const daysLeft   = daysUntil(listing.expires_at)
   const postedDays = daysAgo(listing.created_at)
-  const waUrl = formatWhatsAppUrl(listing.contact_phone)
+  const waUrl      = formatWhatsAppUrl(listing.contact_phone)
+  const walk       = walkInfo ? formatWalk(walkInfo) : null
 
   return (
     <div className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl p-4 w-full max-w-sm">
@@ -44,6 +52,19 @@ export default function ListingCard({ listing, onClose }: ListingCardProps) {
         ${listing.rent.toLocaleString()}
         <span className="text-sm font-normal text-zinc-400">/mo</span>
       </p>
+
+      {/* Walk to bus stop */}
+      {walk && (
+        <div className="flex items-center gap-2.5 bg-blue-500/10 border border-blue-500/20 rounded-xl px-3 py-2 mb-3">
+          <span className="text-lg">🚶</span>
+          <div className="leading-tight">
+            <span className="text-blue-400 text-xs font-semibold">{walk.minutes} min walk</span>
+            <span className="text-zinc-500 text-xs"> · </span>
+            <span className="text-zinc-400 text-xs">{walk.miles} mi</span>
+            <p className="text-zinc-500 text-xs">to South Campus Main Circle bus stop</p>
+          </div>
+        </div>
+      )}
 
       {/* Details grid */}
       <div className="grid grid-cols-2 gap-1.5 text-xs text-zinc-400 mb-3">

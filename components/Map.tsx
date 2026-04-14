@@ -3,14 +3,20 @@
 import { useEffect, useRef, useCallback } from 'react'
 import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
-import { Listing, PIN_COLORS, LISTING_TYPE_LABELS } from '@/lib/types'
+import { Listing, PIN_COLORS, WalkInfo } from '@/lib/types'
 
 const UB_CENTER: [number, number] = [-78.7877, 42.9987]
 const DEFAULT_ZOOM = 13
 
+// UB South Campus Main Circle bus stop
+const BUS_STOP: [number, number] = [-78.819123, 42.954147]
+
+const ROUTE_SOURCE = 'walk-route'
+const ROUTE_LAYER  = 'walk-route-line'
+
 interface MapProps {
   listings: Listing[]
-  onPinClick: (listing: Listing) => void
+  onPinClick: (listing: Listing, walkInfo: WalkInfo | null) => void
   selectedId?: string | null
 }
 
@@ -24,6 +30,52 @@ export default function Map({ listings, onPinClick, selectedId }: MapProps) {
     markers.current = []
   }, [])
 
+  const clearRoute = useCallback(() => {
+    if (!map.current) return
+    if (map.current.getLayer(ROUTE_LAYER))  map.current.removeLayer(ROUTE_LAYER)
+    if (map.current.getSource(ROUTE_SOURCE)) map.current.removeSource(ROUTE_SOURCE)
+  }, [])
+
+  const fetchAndDrawRoute = useCallback(async (listing: Listing): Promise<WalkInfo | null> => {
+    const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN!
+    const url =
+      `https://api.mapbox.com/directions/v5/mapbox/walking/` +
+      `${listing.longitude},${listing.latitude};${BUS_STOP[0]},${BUS_STOP[1]}` +
+      `?geometries=geojson&access_token=${token}`
+
+    try {
+      const res  = await fetch(url)
+      const data = await res.json()
+      const route = data.routes?.[0]
+      if (!route) return null
+
+      const walkInfo: WalkInfo = {
+        distanceMeters:  route.distance,
+        durationSeconds: route.duration,
+      }
+
+      if (map.current) {
+        clearRoute()
+        map.current.addSource(ROUTE_SOURCE, {
+          type: 'geojson',
+          data: { type: 'Feature', properties: {}, geometry: route.geometry },
+        })
+        map.current.addLayer({
+          id:     ROUTE_LAYER,
+          type:   'line',
+          source: ROUTE_SOURCE,
+          layout: { 'line-join': 'round', 'line-cap': 'round' },
+          paint:  { 'line-color': '#3b82f6', 'line-width': 4, 'line-opacity': 0.85 },
+        })
+      }
+
+      return walkInfo
+    } catch {
+      return null
+    }
+  }, [clearRoute])
+
+  // Initialise map once
   useEffect(() => {
     if (map.current || !mapContainer.current) return
 
@@ -31,18 +83,54 @@ export default function Map({ listings, onPinClick, selectedId }: MapProps) {
 
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/dark-v11',
-      center: UB_CENTER,
-      zoom: DEFAULT_ZOOM,
+      style:     'mapbox://styles/mapbox/dark-v11',
+      center:    UB_CENTER,
+      zoom:      DEFAULT_ZOOM,
     })
 
     map.current.addControl(new mapboxgl.NavigationControl(), 'bottom-right')
     map.current.addControl(
       new mapboxgl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: false }),
-      'bottom-right'
+      'bottom-right',
     )
+
+    // Bus stop marker
+    map.current.on('load', () => {
+      const el = document.createElement('div')
+      el.title = 'UB South Campus Main Circle — Bus Stop'
+      el.innerHTML = `
+        <div style="
+          background: #f59e0b;
+          border: 2.5px solid white;
+          border-radius: 6px;
+          width: 30px;
+          height: 30px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+          font-size: 16px;
+          cursor: default;
+        ">🚌</div>
+      `
+      new mapboxgl.Marker({ element: el, anchor: 'bottom' })
+        .setLngLat(BUS_STOP)
+        .setPopup(
+          new mapboxgl.Popup({ offset: 28, closeButton: false })
+            .setHTML('<span style="color:#111;font-size:12px;font-weight:600;">UB South Campus<br>Main Circle Bus Stop</span>')
+        )
+        .addTo(map.current!)
+    })
   }, [])
 
+  // Clear route when no listing is selected
+  useEffect(() => {
+    if (!selectedId && map.current?.isStyleLoaded()) {
+      clearRoute()
+    }
+  }, [selectedId, clearRoute])
+
+  // Draw listing pins
   useEffect(() => {
     if (!map.current) return
 
@@ -51,7 +139,6 @@ export default function Map({ listings, onPinClick, selectedId }: MapProps) {
       listings.forEach((listing) => {
         const color = PIN_COLORS[listing.type]
 
-        // Custom pin element
         const el = document.createElement('div')
         el.className = 'cursor-pointer transition-transform hover:scale-110'
         el.innerHTML = `
@@ -67,9 +154,11 @@ export default function Map({ listings, onPinClick, selectedId }: MapProps) {
           "></div>
         `
 
-        el.addEventListener('click', (e) => {
+        el.addEventListener('click', async (e) => {
           e.stopPropagation()
-          onPinClick(listing)
+          clearRoute()
+          const walkInfo = await fetchAndDrawRoute(listing)
+          onPinClick(listing, walkInfo)
         })
 
         const marker = new mapboxgl.Marker({ element: el, anchor: 'bottom' })
@@ -85,7 +174,7 @@ export default function Map({ listings, onPinClick, selectedId }: MapProps) {
     } else {
       map.current.once('load', addMarkers)
     }
-  }, [listings, selectedId, onPinClick, clearMarkers])
+  }, [listings, selectedId, onPinClick, clearMarkers, clearRoute, fetchAndDrawRoute])
 
   return <div ref={mapContainer} className="w-full h-full" />
 }
