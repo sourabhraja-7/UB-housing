@@ -99,7 +99,7 @@ export default function Map({ listings, onPinClick, selectedId }: MapProps) {
   const markers = useRef<google.maps.marker.AdvancedMarkerElement[]>([])
   const routeRenderer = useRef<google.maps.DirectionsRenderer | null>(null)
   const directionsService = useRef<google.maps.DirectionsService | null>(null)
-  const [mapReady, setMapReady] = useState(false)
+  const [mapReady, setMapReady] = useState(0)
   const [theme, setTheme] = useState<MapTheme>('dark')
 
   // Load stored theme after mount (avoids SSR/hydration mismatch)
@@ -164,7 +164,7 @@ export default function Map({ listings, onPinClick, selectedId }: MapProps) {
     if (!mapContainer.current) return
     let cancelled = false
 
-    setMapReady(false)
+    map.current = null
     clearMarkers()
     clearRoute()
 
@@ -200,7 +200,7 @@ export default function Map({ listings, onPinClick, selectedId }: MapProps) {
       })
       busMarker.addListener('click', () => busInfo.open({ map: map.current!, anchor: busMarker }))
 
-      setMapReady(true)
+      setMapReady(n => n + 1)
     })
 
     return () => { cancelled = true }
