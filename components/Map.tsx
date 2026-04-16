@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { loadGoogleMaps } from '@/lib/googleMaps'
+import { loadGoogleMaps, getMapId, readStoredTheme, storeTheme, MapTheme } from '@/lib/googleMaps'
 import { Listing, PIN_COLORS, WalkInfo } from '@/lib/types'
 
 const UB_CENTER = { lat: 42.9987, lng: -78.7877 }
@@ -10,71 +10,113 @@ const DEFAULT_ZOOM = 13
 // UB South Campus Main Circle bus stop
 const BUS_STOP = { lat: 42.954147, lng: -78.819123 }
 
-const DARK_STYLE: google.maps.MapTypeStyle[] = [
-  { elementType: 'geometry', stylers: [{ color: '#212121' }] },
-  { elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#757575' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#212121' }] },
-  { featureType: 'administrative.country', elementType: 'labels.text.fill', stylers: [{ color: '#9e9e9e' }] },
-  { featureType: 'administrative.land_parcel', stylers: [{ visibility: 'off' }] },
-  { featureType: 'administrative.locality', elementType: 'labels.text.fill', stylers: [{ color: '#bdbdbd' }] },
-  { featureType: 'poi', elementType: 'labels.text.fill', stylers: [{ color: '#757575' }] },
-  { featureType: 'poi.park', elementType: 'geometry', stylers: [{ color: '#181818' }] },
-  { featureType: 'poi.park', elementType: 'labels.text.fill', stylers: [{ color: '#616161' }] },
-  { featureType: 'road', elementType: 'geometry.fill', stylers: [{ color: '#2c2c2c' }] },
-  { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#8a8a8a' }] },
-  { featureType: 'road.arterial', elementType: 'geometry', stylers: [{ color: '#373737' }] },
-  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#3c3c3c' }] },
-  { featureType: 'road.local', elementType: 'labels.text.fill', stylers: [{ color: '#616161' }] },
-  { featureType: 'transit', elementType: 'labels.text.fill', stylers: [{ color: '#757575' }] },
-  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#000000' }] },
-  { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#3d3d3d' }] },
-]
-
 interface MapProps {
   listings: Listing[]
   onPinClick: (listing: Listing, walkInfo: WalkInfo | null) => void
   selectedId?: string | null
 }
 
-function pinIcon(color: string, selected: boolean): google.maps.Icon {
-  const strokeWidth = selected ? 4 : 2.5
-  const svg = `
-<svg xmlns="http://www.w3.org/2000/svg" width="34" height="44" viewBox="0 0 34 44">
-  <path d="M17 2 C8 2 2 9 2 17 c0 11 15 25 15 25 s15-14 15-25 C32 9 26 2 17 2z"
-        fill="${color}" stroke="#ffffff" stroke-width="${strokeWidth}"/>
-  <circle cx="17" cy="17" r="5" fill="#ffffff"/>
-</svg>`.trim()
-  return {
-    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
-    scaledSize: new google.maps.Size(34, 44),
-    anchor: new google.maps.Point(17, 44),
-  }
+function buildListingPin(color: string, selected: boolean): HTMLElement {
+  const wrapper = document.createElement('div')
+  wrapper.style.cssText = `
+    width: 32px;
+    height: 42px;
+    cursor: pointer;
+    transform-origin: bottom center;
+    transition: transform 0.15s ease, filter 0.15s ease;
+    will-change: transform;
+  `
+  wrapper.innerHTML = `
+    <svg width="32" height="42" viewBox="0 0 32 42" xmlns="http://www.w3.org/2000/svg">
+      <path d="M16 2 C8 2 2 8 2 16 c0 10 14 24 14 24 s14-14 14-24 C30 8 24 2 16 2z"
+            fill="${color}"
+            stroke="#ffffff"
+            stroke-width="${selected ? 4 : 3}"
+            filter="drop-shadow(0 3px 6px rgba(0,0,0,0.45))"/>
+      <circle cx="16" cy="16" r="5" fill="#ffffff"/>
+      ${selected ? '<circle cx="16" cy="16" r="18" fill="none" stroke="#ffffff" stroke-width="2" stroke-opacity="0.85"/>' : ''}
+    </svg>
+  `
+  wrapper.addEventListener('mouseenter', () => {
+    wrapper.style.transform = 'scale(1.15)'
+    wrapper.style.filter = 'brightness(1.1)'
+  })
+  wrapper.addEventListener('mouseleave', () => {
+    wrapper.style.transform = 'scale(1)'
+    wrapper.style.filter = 'none'
+  })
+  return wrapper
 }
 
-function busStopIcon(): google.maps.Icon {
-  const svg = `
-<svg xmlns="http://www.w3.org/2000/svg" width="38" height="38" viewBox="0 0 38 38">
-  <rect x="3" y="3" width="32" height="32" rx="6" fill="#f59e0b" stroke="#ffffff" stroke-width="2.5"/>
-  <text x="19" y="26" font-size="18" text-anchor="middle">🚌</text>
-</svg>`.trim()
-  return {
-    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
-    scaledSize: new google.maps.Size(38, 38),
-    anchor: new google.maps.Point(19, 38),
-  }
+function buildBusStopPin(): HTMLElement {
+  const el = document.createElement('div')
+  el.style.cssText = `
+    width: 50px;
+    height: 50px;
+    box-sizing: border-box;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 50%, #1d4ed8 100%);
+    border: 3px solid #ffffff;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.55), 0 0 0 1px rgba(59,130,246,0.35);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transform-origin: bottom center;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    will-change: transform;
+  `
+  el.innerHTML = `
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="#ffffff" style="margin-top: 2px;">
+      <path d="M4 16c0 .88.39 1.67 1 2.22V20c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h8v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1.78c.61-.55 1-1.34 1-2.22V6c0-3.5-3.58-4-8-4s-8 .5-8 4v10zm3.5 1c-.83 0-1.5-.67-1.5-1.5S6.67 14 7.5 14s1.5.67 1.5 1.5S8.33 17 7.5 17zm9 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm1.5-6H6V6h12v5z"/>
+    </svg>
+    <span style="
+      color: #ffffff;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.4px;
+      line-height: 1;
+      margin-top: 1px;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    ">UB</span>
+  `
+  el.addEventListener('mouseenter', () => {
+    el.style.transform = 'scale(1.12)'
+    el.style.boxShadow = '0 6px 20px rgba(0,0,0,0.6), 0 0 0 2px rgba(59,130,246,0.5)'
+  })
+  el.addEventListener('mouseleave', () => {
+    el.style.transform = 'scale(1)'
+    el.style.boxShadow = '0 4px 14px rgba(0,0,0,0.55), 0 0 0 1px rgba(59,130,246,0.35)'
+  })
+  return el
 }
 
 export default function Map({ listings, onPinClick, selectedId }: MapProps) {
   const mapContainer = useRef<HTMLDivElement>(null)
   const map = useRef<google.maps.Map | null>(null)
-  const markers = useRef<google.maps.Marker[]>([])
+  const markers = useRef<google.maps.marker.AdvancedMarkerElement[]>([])
   const routeRenderer = useRef<google.maps.DirectionsRenderer | null>(null)
   const directionsService = useRef<google.maps.DirectionsService | null>(null)
   const [mapReady, setMapReady] = useState(false)
+  const [theme, setTheme] = useState<MapTheme>('dark')
+
+  // Load stored theme after mount (avoids SSR/hydration mismatch)
+  useEffect(() => {
+    setTheme(readStoredTheme())
+  }, [])
+
+  const toggleTheme = useCallback(() => {
+    setTheme((prev) => {
+      const next: MapTheme = prev === 'dark' ? 'light' : 'dark'
+      storeTheme(next)
+      return next
+    })
+  }, [])
 
   const clearMarkers = useCallback(() => {
-    markers.current.forEach((m) => m.setMap(null))
+    markers.current.forEach((m) => { m.map = null })
     markers.current = []
   }, [])
 
@@ -102,9 +144,9 @@ export default function Map({ listings, onPinClick, selectedId }: MapProps) {
         directions: result,
         suppressMarkers: true,
         polylineOptions: {
-          strokeColor: '#3b82f6',
-          strokeWeight: 4,
-          strokeOpacity: 0.85,
+          strokeColor: '#60a5fa',
+          strokeWeight: 5,
+          strokeOpacity: 0.9,
         },
       })
 
@@ -117,10 +159,14 @@ export default function Map({ listings, onPinClick, selectedId }: MapProps) {
     }
   }, [clearRoute])
 
-  // Initialise map once
+  // Build / rebuild map whenever theme changes
   useEffect(() => {
-    if (map.current || !mapContainer.current) return
+    if (!mapContainer.current) return
     let cancelled = false
+
+    setMapReady(false)
+    clearMarkers()
+    clearRoute()
 
     loadGoogleMaps().then(() => {
       if (cancelled || !mapContainer.current) return
@@ -128,24 +174,29 @@ export default function Map({ listings, onPinClick, selectedId }: MapProps) {
       map.current = new google.maps.Map(mapContainer.current, {
         center: UB_CENTER,
         zoom: DEFAULT_ZOOM,
-        styles: DARK_STYLE,
+        mapId: getMapId(),
+        colorScheme:
+          theme === 'dark'
+            ? google.maps.ColorScheme.DARK
+            : google.maps.ColorScheme.LIGHT,
         mapTypeControl: false,
         streetViewControl: false,
         fullscreenControl: false,
+        clickableIcons: false,
         zoomControlOptions: { position: google.maps.ControlPosition.RIGHT_BOTTOM },
       })
 
       directionsService.current = new google.maps.DirectionsService()
 
-      const busMarker = new google.maps.Marker({
+      const busMarker = new google.maps.marker.AdvancedMarkerElement({
         map: map.current,
         position: BUS_STOP,
-        icon: busStopIcon(),
+        content: buildBusStopPin(),
         title: 'UB South Campus Main Circle — Bus Stop',
       })
       const busInfo = new google.maps.InfoWindow({
         content:
-          '<div style="color:#111;font-size:12px;font-weight:600;">UB South Campus<br/>Main Circle Bus Stop</div>',
+          '<div style="color:#111;font-size:12px;font-weight:600;padding:2px 4px;">UB South Campus<br/>Main Circle Bus Stop</div>',
       })
       busMarker.addListener('click', () => busInfo.open({ map: map.current!, anchor: busMarker }))
 
@@ -153,7 +204,7 @@ export default function Map({ listings, onPinClick, selectedId }: MapProps) {
     })
 
     return () => { cancelled = true }
-  }, [])
+  }, [theme, clearMarkers, clearRoute])
 
   // Clear route when nothing is selected
   useEffect(() => {
@@ -167,10 +218,10 @@ export default function Map({ listings, onPinClick, selectedId }: MapProps) {
     clearMarkers()
     listings.forEach((listing) => {
       const color = PIN_COLORS[listing.type]
-      const marker = new google.maps.Marker({
+      const marker = new google.maps.marker.AdvancedMarkerElement({
         map: map.current!,
         position: { lat: listing.latitude, lng: listing.longitude },
-        icon: pinIcon(color, selectedId === listing.id),
+        content: buildListingPin(color, selectedId === listing.id),
       })
       marker.addListener('click', async () => {
         clearRoute()
@@ -181,5 +232,18 @@ export default function Map({ listings, onPinClick, selectedId }: MapProps) {
     })
   }, [mapReady, listings, selectedId, onPinClick, clearMarkers, clearRoute, fetchAndDrawRoute])
 
-  return <div ref={mapContainer} className="w-full h-full" />
+  return (
+    <div className="relative w-full h-full">
+      <div ref={mapContainer} className="absolute inset-0" />
+      <button
+        type="button"
+        onClick={toggleTheme}
+        aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        className="absolute top-4 right-4 z-10 w-10 h-10 flex items-center justify-center rounded-xl bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-700 backdrop-blur shadow-xl text-lg transition-colors"
+      >
+        {theme === 'dark' ? '☀️' : '🌙'}
+      </button>
+    </div>
+  )
 }

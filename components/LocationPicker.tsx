@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { loadGoogleMaps } from '@/lib/googleMaps'
+import { loadGoogleMaps, getMapId, readStoredTheme } from '@/lib/googleMaps'
 
 interface LocationPickerProps {
   onLocationSelect: (address: string, lat: number, lng: number) => void
@@ -12,6 +12,42 @@ interface LocationPickerProps {
 
 const UB_CENTER = { lat: 42.9987, lng: -78.7877 }
 
+function buildDraggablePin(): HTMLElement {
+  const wrapper = document.createElement('div')
+  wrapper.style.cssText = `
+    width: 32px;
+    height: 42px;
+    transform-origin: bottom center;
+    transition: transform 0.15s ease;
+  `
+  wrapper.innerHTML = `
+    <svg width="32" height="42" viewBox="0 0 32 42" xmlns="http://www.w3.org/2000/svg">
+      <path d="M16 2 C8 2 2 8 2 16 c0 10 14 24 14 24 s14-14 14-24 C30 8 24 2 16 2z"
+            fill="#6366f1"
+            stroke="#ffffff"
+            stroke-width="3"
+            filter="drop-shadow(0 3px 6px rgba(0,0,0,0.45))"/>
+      <circle cx="16" cy="16" r="5" fill="#ffffff"/>
+    </svg>
+  `
+  return wrapper
+}
+
+function readLatLng(
+  pos:
+    | google.maps.LatLng
+    | google.maps.LatLngLiteral
+    | google.maps.LatLngAltitude
+    | google.maps.LatLngAltitudeLiteral
+    | null
+    | undefined,
+): { lat: number; lng: number } | null {
+  if (!pos) return null
+  const lat = typeof pos.lat === 'function' ? pos.lat() : (pos as google.maps.LatLngLiteral).lat
+  const lng = typeof pos.lng === 'function' ? pos.lng() : (pos as google.maps.LatLngLiteral).lng
+  return { lat, lng }
+}
+
 export default function LocationPicker({
   onLocationSelect,
   initialAddress = '',
@@ -20,7 +56,7 @@ export default function LocationPicker({
 }: LocationPickerProps) {
   const mapContainer = useRef<HTMLDivElement>(null)
   const map = useRef<google.maps.Map | null>(null)
-  const marker = useRef<google.maps.Marker | null>(null)
+  const marker = useRef<google.maps.marker.AdvancedMarkerElement | null>(null)
   const autocompleteService = useRef<google.maps.places.AutocompleteService | null>(null)
   const geocoder = useRef<google.maps.Geocoder | null>(null)
   const sessionToken = useRef<google.maps.places.AutocompleteSessionToken | null>(null)
@@ -43,16 +79,17 @@ export default function LocationPicker({
   const placeMarker = (lat: number, lng: number) => {
     if (!map.current) return
     if (marker.current) {
-      marker.current.setPosition({ lat, lng })
+      marker.current.position = { lat, lng }
     } else {
-      marker.current = new google.maps.Marker({
+      marker.current = new google.maps.marker.AdvancedMarkerElement({
         map: map.current,
         position: { lat, lng },
-        draggable: true,
+        content: buildDraggablePin(),
+        gmpDraggable: true,
       })
       marker.current.addListener('dragend', () => {
-        const pos = marker.current!.getPosition()
-        if (pos) reverseGeocode(pos.lat(), pos.lng())
+        const latLng = readLatLng(marker.current!.position)
+        if (latLng) reverseGeocode(latLng.lat, latLng.lng)
       })
     }
     map.current.panTo({ lat, lng })
@@ -72,9 +109,15 @@ export default function LocationPicker({
       map.current = new google.maps.Map(mapContainer.current, {
         center,
         zoom: 14,
+        mapId: getMapId(),
+        colorScheme:
+          readStoredTheme() === 'dark'
+            ? google.maps.ColorScheme.DARK
+            : google.maps.ColorScheme.LIGHT,
         mapTypeControl: false,
         streetViewControl: false,
         fullscreenControl: false,
+        clickableIcons: false,
       })
 
       geocoder.current = new google.maps.Geocoder()
