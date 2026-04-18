@@ -7,24 +7,43 @@ import { Listing, PIN_COLORS, WalkInfo } from '@/lib/types'
 const UB_CENTER = { lat: 42.9987, lng: -78.7877 }
 const DEFAULT_ZOOM = 13
 
-// UB South Campus Main Circle bus stop
-const BUS_STOP = { lat: 42.954147, lng: -78.819123 }
+function nearestBusStop(lat: number, lng: number) {
+  let nearest = BUS_STOPS[0]
+  let minDist = Infinity
+  for (const stop of BUS_STOPS) {
+    const dlat = stop.lat - lat
+    const dlng = stop.lng - lng
+    const dist = dlat * dlat + dlng * dlng
+    if (dist < minDist) { minDist = dist; nearest = stop }
+  }
+  return nearest
+}
+
+const BUS_STOPS = [
+  { lat: 42.954147, lng: -78.819123, name: 'UB South Campus Main Circle' },
+  { lat: 42.956778, lng: -78.815889, name: 'Goodyear' },
+  { lat: 42.965919, lng: -78.811203, name: 'Maynard' },
+  { lat: 42.980575, lng: -78.797778, name: 'Hartford Rd' },
+  { lat: 42.992853, lng: -78.792090, name: 'Service Center' },
+  { lat: 43.000028, lng: -78.788872, name: 'Flint Loop' },
+]
 
 interface MapProps {
   listings: Listing[]
-  onPinClick: (listing: Listing, walkInfo: WalkInfo | null) => void
+  onPinClick: (listings: Listing[], walkInfo: WalkInfo | null) => void
   selectedId?: string | null
 }
 
-function buildListingPin(color: string, selected: boolean): HTMLElement {
+function buildListingPin(color: string, selected: boolean, count: number = 1): HTMLElement {
   const wrapper = document.createElement('div')
   wrapper.style.cssText = `
     width: 32px;
-    height: 42px;
+    height: ${count > 1 ? '52px' : '42px'};
     cursor: pointer;
     transform-origin: bottom center;
     transition: transform 0.15s ease, filter 0.15s ease;
     will-change: transform;
+    position: relative;
   `
   wrapper.innerHTML = `
     <svg width="32" height="42" viewBox="0 0 32 42" xmlns="http://www.w3.org/2000/svg">
@@ -36,6 +55,24 @@ function buildListingPin(color: string, selected: boolean): HTMLElement {
       <circle cx="16" cy="16" r="5" fill="#ffffff"/>
       ${selected ? '<circle cx="16" cy="16" r="18" fill="none" stroke="#ffffff" stroke-width="2" stroke-opacity="0.85"/>' : ''}
     </svg>
+    ${count > 1 ? `
+    <div style="
+      position: absolute;
+      top: -6px;
+      right: -6px;
+      background: #f59e0b;
+      color: #fff;
+      font-size: 10px;
+      font-weight: 800;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 2px solid #fff;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+    ">${count}</div>` : ''}
   `
   wrapper.addEventListener('mouseenter', () => {
     wrapper.style.transform = 'scale(1.15)'
@@ -130,9 +167,10 @@ export default function Map({ listings, onPinClick, selectedId }: MapProps) {
   const fetchAndDrawRoute = useCallback(async (listing: Listing): Promise<WalkInfo | null> => {
     if (!map.current || !directionsService.current) return null
     try {
+      const stop = nearestBusStop(listing.latitude, listing.longitude)
       const result = await directionsService.current.route({
         origin: { lat: listing.latitude, lng: listing.longitude },
-        destination: BUS_STOP,
+        destination: { lat: stop.lat, lng: stop.lng },
         travelMode: google.maps.TravelMode.WALKING,
       })
       const leg = result.routes?.[0]?.legs?.[0]
@@ -188,17 +226,18 @@ export default function Map({ listings, onPinClick, selectedId }: MapProps) {
 
       directionsService.current = new google.maps.DirectionsService()
 
-      const busMarker = new google.maps.marker.AdvancedMarkerElement({
-        map: map.current,
-        position: BUS_STOP,
-        content: buildBusStopPin(),
-        title: 'UB South Campus Main Circle — Bus Stop',
+      BUS_STOPS.forEach((stop) => {
+        const busMarker = new google.maps.marker.AdvancedMarkerElement({
+          map: map.current!,
+          position: { lat: stop.lat, lng: stop.lng },
+          content: buildBusStopPin(),
+          title: `${stop.name} — Bus Stop`,
+        })
+        const busInfo = new google.maps.InfoWindow({
+          content: `<div style="color:#111;font-size:12px;font-weight:600;padding:2px 4px;">${stop.name}<br/>Bus Stop</div>`,
+        })
+        busMarker.addListener('click', () => busInfo.open({ map: map.current!, anchor: busMarker }))
       })
-      const busInfo = new google.maps.InfoWindow({
-        content:
-          '<div style="color:#111;font-size:12px;font-weight:600;padding:2px 4px;">UB South Campus<br/>Main Circle Bus Stop</div>',
-      })
-      busMarker.addListener('click', () => busInfo.open({ map: map.current!, anchor: busMarker }))
 
       setMapReady(n => n + 1)
     })
@@ -216,17 +255,28 @@ export default function Map({ listings, onPinClick, selectedId }: MapProps) {
     if (!mapReady || !map.current) return
 
     clearMarkers()
-    listings.forEach((listing) => {
-      const color = PIN_COLORS[listing.type]
+
+    // Group by exact coordinates
+    const clusters: Record<string, Listing[]> = {}
+    for (const l of listings) {
+      const key = `${l.latitude},${l.longitude}`
+      if (!clusters[key]) clusters[key] = []
+      clusters[key].push(l)
+    }
+
+    Object.values(clusters).forEach((cluster: Listing[]) => {
+      const first = cluster[0]
+      const color = PIN_COLORS[first.type]
+      const isSelected = cluster.some((l: Listing) => l.id === selectedId)
       const marker = new google.maps.marker.AdvancedMarkerElement({
         map: map.current!,
-        position: { lat: listing.latitude, lng: listing.longitude },
-        content: buildListingPin(color, selectedId === listing.id),
+        position: { lat: first.latitude, lng: first.longitude },
+        content: buildListingPin(color, isSelected, cluster.length),
       })
       marker.addListener('click', async () => {
         clearRoute()
-        const walkInfo = await fetchAndDrawRoute(listing)
-        onPinClick(listing, walkInfo)
+        const walkInfo = await fetchAndDrawRoute(first)
+        onPinClick(cluster, walkInfo)
       })
       markers.current.push(marker)
     })

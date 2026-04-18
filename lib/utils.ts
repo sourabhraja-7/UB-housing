@@ -16,6 +16,15 @@ export function daysAgo(dateStr: string): number {
   return Math.floor((now.getTime() - target.getTime()) / (1000 * 60 * 60 * 24))
 }
 
+export function monthsBetween(startStr: string, endStr: string): number {
+  const start = new Date(startStr)
+  const end = new Date(endStr)
+  return Math.max(
+    1,
+    (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth())
+  )
+}
+
 export function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('en-US', {
     month: 'short',

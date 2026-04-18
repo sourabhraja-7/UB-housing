@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "@googlemaps/js-api-loader": "^2.0.2",
-    "@supabase/supabase-js": "^2.103.0",
+    "@supabase/ssr": "^0.10.2",
+    "@supabase/supabase-js": "^2.103.3",
     "@types/uuid": "^10.0.0",
     "next": "14.2.35",
     "react": "^18",

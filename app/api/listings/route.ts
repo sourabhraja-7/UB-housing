@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
-import { v4 as uuidv4 } from 'uuid'
+import { createClient } from '@/lib/supabase-server'
 
 export async function GET(req: NextRequest) {
+  const supabase = await createClient()
   const { searchParams } = new URL(req.url)
   const type = searchParams.get('type')
   const min_rent = searchParams.get('min_rent')
   const max_rent = searchParams.get('max_rent')
   const bedrooms = searchParams.get('bedrooms')
+  const bathrooms = searchParams.get('bathrooms')
   const furnished = searchParams.get('furnished')
   const utilities_included = searchParams.get('utilities_included')
 
@@ -22,6 +23,7 @@ export async function GET(req: NextRequest) {
   if (min_rent) query = query.gte('rent', parseInt(min_rent))
   if (max_rent) query = query.lte('rent', parseInt(max_rent))
   if (bedrooms && bedrooms !== 'all') query = query.eq('bedrooms', parseInt(bedrooms))
+  if (bathrooms && bathrooms !== 'all') query = query.eq('bathrooms', parseInt(bathrooms))
   if (furnished === 'true') query = query.eq('furnished', true)
   if (utilities_included === 'true') query = query.eq('utilities_included', true)
 
@@ -32,6 +34,11 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const supabase = await createClient()
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
   const body = await req.json()
 
   const required = ['type', 'title', 'rent', 'address', 'latitude', 'longitude', 'contact_phone', 'contact_name']
@@ -41,14 +48,20 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const edit_token = uuidv4()
   const expires_at = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+
+  // Convert empty strings to null for optional integer/date fields
+  const intFields = ['floor_level', 'lease_duration_months', 'bedrooms', 'bathrooms']
+  const dateFields = ['available_date', 'sublease_end_date']
+  for (const field of [...intFields, ...dateFields]) {
+    if (body[field] === '') body[field] = null
+  }
 
   const { data, error } = await supabase
     .from('listings')
     .insert({
       ...body,
-      edit_token,
+      user_id: user.id,
       expires_at,
       is_active: true,
     })

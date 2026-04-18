@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import { ListingFormData, ListingType, GenderPreference } from '@/lib/types'
+import { monthsBetween } from '@/lib/utils'
 
 const LocationPicker = dynamic(() => import('./LocationPicker'), { ssr: false })
 
@@ -27,16 +28,19 @@ const EMPTY: ListingFormData = {
   utilities_included: false,
   gender_preference: 'any',
   available_date: '',
+  sublease_end_date: '',
   lease_duration_months: 12,
   contact_phone: '',
   contact_name: '',
   photos: [],
+  amenities: [],
+  floor_level: '',
+  food_preference: '',
 }
 
 const LEASE_DEFAULTS: Record<ListingType, number> = {
   sublease: 3,
   room_available: 12,
-  roommate_needed: 6,
 }
 
 type FurnishedLevel = 'none' | 'semi' | 'full'
@@ -50,6 +54,8 @@ const FURNISHED_OPTIONS: { value: FurnishedLevel; label: string }[] = [
 const AMENITIES = [
   'Dishwasher',
   'Washer/Dryer',
+  'Oven',
+  'Microwave',
   'Air Conditioning',
   'Heating',
   'Wi-Fi',
@@ -61,6 +67,8 @@ const AMENITIES = [
   'Gym Access',
   'Pet Friendly',
 ]
+
+const FOOD_PREFERENCES = ['Veg', 'Non-Veg', 'Eggetarian', 'No Preference']
 
 const COUNTRY_CODES = [
   { code: '+1', country: 'US', flag: '🇺🇸', name: 'United States' },
@@ -80,19 +88,6 @@ const COUNTRY_CODES = [
   { code: '+55', country: 'BR', flag: '🇧🇷', name: 'Brazil' },
 ]
 
-const STREETS_NEAR_BUS_STOPS = [
-  'Main Street',
-  'Merrimac Street',
-  'Englewood Avenue',
-  'Winspear Avenue',
-  'Custer Street',
-  'Heath Street',
-  'Tyler Street',
-  'Minnesota Avenue',
-  'Berkshire Avenue',
-  'Callodine Avenue',
-]
-
 export default function ListingForm({ initial, onSubmit, submitLabel, extraActions }: ListingFormProps) {
   const [form, setForm] = useState<ListingFormData>({ ...EMPTY, ...initial })
   const [loading, setLoading] = useState(false)
@@ -101,13 +96,11 @@ export default function ListingForm({ initial, onSubmit, submitLabel, extraActio
   const [furnishedLevel, setFurnishedLevel] = useState<FurnishedLevel>(
     initial?.furnished ? 'full' : 'none'
   )
-  const [amenities, setAmenities] = useState<string[]>([])
+  const [selectedAmenities, setSelectedAmenities] = useState<string[]>([])
+  const [amenityOptions, setAmenityOptions] = useState<Record<string, string>>({})
   const [countryIdx, setCountryIdx] = useState(0)
   const [countryOpen, setCountryOpen] = useState(false)
   const countryRef = useRef<HTMLDivElement>(null)
-  const [preferredStreets, setPreferredStreets] = useState<string[]>([])
-  const [rentMin, setRentMin] = useState<number | ''>('')
-  const [rentMax, setRentMax] = useState<number | ''>('')
 
   const set = (key: keyof ListingFormData, value: any) =>
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -123,15 +116,21 @@ export default function ListingForm({ initial, onSubmit, submitLabel, extraActio
   }
 
   const toggleAmenity = (a: string) => {
-    setAmenities((prev) => {
-      const next = prev.includes(a) ? prev.filter((x) => x !== a) : [...prev, a]
-      set('utilities_included', next.length > 0)
-      return next
+    setSelectedAmenities((prev) => {
+      if (prev.includes(a)) {
+        setAmenityOptions((opts) => {
+          const updated = { ...opts }
+          delete updated[a]
+          return updated
+        })
+        return prev.filter((x) => x !== a)
+      }
+      return [...prev, a]
     })
   }
 
-  const toggleStreet = (s: string) => {
-    setPreferredStreets((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]))
+  const setWasherOption = (option: string) => {
+    setAmenityOptions((prev) => ({ ...prev, 'Washer/Dryer': option }))
   }
 
   useEffect(() => {
@@ -145,42 +144,26 @@ export default function ListingForm({ initial, onSubmit, submitLabel, extraActio
     return () => document.removeEventListener('mousedown', onClick)
   }, [countryOpen])
 
-  const isRoommate = form.type === 'roommate_needed'
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
 
-    if (!isRoommate) {
-      if (!form.address || form.latitude === null) {
-        setError('Please select a location from the map.')
-        return
-      }
-    } else {
-      if (rentMin === '' || rentMax === '' || Number(rentMin) > Number(rentMax)) {
-        setError('Please enter a valid rent range (min ≤ max).')
-        return
-      }
+    if (!form.address || form.latitude === null) {
+      setError('Please select a location from the map.')
+      return
     }
     if (!form.contact_phone.match(/\d{10}/)) {
       setError('Please enter a valid 10-digit phone number.')
       return
     }
 
+    const builtAmenities = selectedAmenities.map((a) =>
+      amenityOptions[a] ? `${a} (${amenityOptions[a]})` : a
+    )
+
     setLoading(true)
     try {
-      const payload: ListingFormData = isRoommate
-        ? {
-            ...form,
-            rent: Number(rentMin),
-            address: preferredStreets.length
-              ? `Prefers: ${preferredStreets.join(', ')}`
-              : 'No specific street preference',
-            latitude: form.latitude ?? 42.9987,
-            longitude: form.longitude ?? -78.7877,
-          }
-        : form
-      await onSubmit(payload)
+      await onSubmit({ ...form, amenities: builtAmenities })
     } catch (err: any) {
       setError(err.message || 'Something went wrong.')
     } finally {
@@ -212,8 +195,8 @@ export default function ListingForm({ initial, onSubmit, submitLabel, extraActio
       {/* Listing Type */}
       <div>
         <label className={labelCls}>Listing Type *</label>
-        <div className="grid grid-cols-3 gap-2">
-          {(['room_available', 'sublease', 'roommate_needed'] as ListingType[]).map((t) => (
+        <div className="grid grid-cols-2 gap-2">
+          {(['room_available', 'sublease'] as ListingType[]).map((t) => (
             <button
               key={t}
               type="button"
@@ -224,7 +207,7 @@ export default function ListingForm({ initial, onSubmit, submitLabel, extraActio
                   : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-500'
               }`}
             >
-              {t === 'room_available' ? 'Room Available' : t === 'sublease' ? 'Sublease' : 'Roommate Needed'}
+              {t === 'room_available' ? 'Houses for Rent' : 'Sublease'}
             </button>
           ))}
         </div>
@@ -238,66 +221,41 @@ export default function ListingForm({ initial, onSubmit, submitLabel, extraActio
           type="text"
           value={form.title}
           onChange={(e) => set('title', e.target.value)}
-          placeholder={
-            isRoommate
-              ? 'Looking for roommate near South Campus'
-              : '1 BED available in 2BHK near South Campus'
-          }
+          placeholder="1 BED available in 2BHK near South Campus"
           className={inputCls}
           maxLength={100}
         />
       </div>
 
-      {/* Rent OR Rent Range */}
-      {isRoommate ? (
-        <div>
-          <label className={labelCls}>Desired Rent Range ($/month) *</label>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="relative">
-              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 text-sm">$</span>
-              <input
-                type="number"
-                min={0}
-                value={rentMin}
-                onChange={(e) => setRentMin(parseInt(e.target.value) || '')}
-                placeholder="Min 500"
-                className={`${inputCls} pl-8`}
-              />
-            </div>
-            <div className="relative">
-              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 text-sm">$</span>
-              <input
-                type="number"
-                min={0}
-                value={rentMax}
-                onChange={(e) => setRentMax(parseInt(e.target.value) || '')}
-                placeholder="Max 900"
-                className={`${inputCls} pl-8`}
-              />
-            </div>
-          </div>
+      {/* Rent + Utilities */}
+      <div>
+        <label className={labelCls}>Rent ($/month per person) *</label>
+        <div className="relative">
+          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 text-sm">$</span>
+          <input
+            required
+            type="number"
+            min={0}
+            value={form.rent}
+            onChange={(e) => set('rent', parseInt(e.target.value) || '')}
+            placeholder="650"
+            className={`${inputCls} pl-8`}
+          />
         </div>
-      ) : (
-        <div>
-          <label className={labelCls}>Rent ($/month per person) *</label>
-          <div className="relative">
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 text-sm">$</span>
-            <input
-              required
-              type="number"
-              min={0}
-              value={form.rent}
-              onChange={(e) => set('rent', parseInt(e.target.value) || '')}
-              placeholder="650"
-              className={`${inputCls} pl-8`}
-            />
-          </div>
-        </div>
-      )}
+        <label className="flex items-center gap-2 mt-2 cursor-pointer select-none w-fit">
+          <input
+            type="checkbox"
+            checked={form.utilities_included}
+            onChange={(e) => set('utilities_included', e.target.checked)}
+            className="accent-indigo-500 w-4 h-4"
+          />
+          <span className="text-zinc-300 text-sm">Utilities included</span>
+        </label>
+      </div>
 
-      {/* Bedrooms/Bathrooms — only for places you have */}
-      {!isRoommate && (
-        <div className="grid grid-cols-2 gap-4">
+      {/* Bedrooms — Houses for Rent only; Bathrooms — both types */}
+      <div className="grid grid-cols-2 gap-4">
+        {form.type === 'room_available' && (
           <div>
             <label className={labelCls}>Bedrooms *</label>
             <select
@@ -306,44 +264,155 @@ export default function ListingForm({ initial, onSubmit, submitLabel, extraActio
               className={inputCls}
             >
               {[1, 2, 3, 4, 5, 6].map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
+                <option key={n} value={n}>{n}</option>
               ))}
             </select>
           </div>
+        )}
+        <div className={form.type === 'sublease' ? 'col-span-2' : ''}>
+          <label className={labelCls}>Bathrooms *</label>
+          <select
+            value={form.bathrooms}
+            onChange={(e) => set('bathrooms', parseInt(e.target.value))}
+            className={inputCls}
+          >
+            {[1, 2, 3].map((n) => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Location */}
+      <div>
+        <label className={labelCls}>Location *</label>
+        <LocationPicker
+          onLocationSelect={(address, lat, lng) => {
+            set('address', address)
+            set('latitude', lat)
+            set('longitude', lng)
+          }}
+          initialAddress={form.address}
+          initialLat={form.latitude}
+          initialLng={form.longitude}
+        />
+      </div>
+
+      {/* Dates */}
+      {form.type === 'sublease' ? (
+        <div>
+          <label className={labelCls}>Sublease Period *</label>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <p className="text-xs text-zinc-500 mb-1.5">Start date</p>
+              <input
+                required
+                type="date"
+                value={form.available_date}
+                onChange={(e) => {
+                  set('available_date', e.target.value)
+                  if (form.sublease_end_date && e.target.value) {
+                    set('lease_duration_months', monthsBetween(e.target.value, form.sublease_end_date))
+                  }
+                }}
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <p className="text-xs text-zinc-500 mb-1.5">End date</p>
+              <input
+                required
+                type="date"
+                value={form.sublease_end_date}
+                min={form.available_date || undefined}
+                onChange={(e) => {
+                  set('sublease_end_date', e.target.value)
+                  if (form.available_date && e.target.value) {
+                    set('lease_duration_months', monthsBetween(form.available_date, e.target.value))
+                  }
+                }}
+                className={inputCls}
+              />
+            </div>
+          </div>
+          {form.available_date && form.sublease_end_date && (
+            <p className="text-xs text-indigo-400 mt-2">
+              Duration: {monthsBetween(form.available_date, form.sublease_end_date)} month{monthsBetween(form.available_date, form.sublease_end_date) !== 1 ? 's' : ''}
+            </p>
+          )}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className={labelCls}>Bathrooms *</label>
+            <label className={labelCls}>Available Date</label>
+            <input
+              type="date"
+              value={form.available_date}
+              onChange={(e) => set('available_date', e.target.value)}
+              className={inputCls}
+            />
+          </div>
+          <div>
+            <label className={labelCls}>Lease Duration</label>
             <select
-              value={form.bathrooms}
-              onChange={(e) => set('bathrooms', parseInt(e.target.value))}
+              value={form.lease_duration_months}
+              onChange={(e) => set('lease_duration_months', parseInt(e.target.value))}
               className={inputCls}
             >
-              {[1, 2, 3].map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
+              <option value={1}>1 month</option>
+              <option value={3}>3 months</option>
+              <option value={6}>6 months</option>
+              <option value={12}>12 months</option>
             </select>
           </div>
         </div>
       )}
 
-      {/* Location for place-based, Preferred Streets for roommate */}
-      {isRoommate ? (
-        <div>
-          <label className={labelCls}>Preferred Streets (near bus stops)</label>
-          <p className="text-xs text-zinc-500 mb-2">
-            Select any streets you'd prefer — all close to South Campus Main Circle.
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            {STREETS_NEAR_BUS_STOPS.map((s) => {
-              const selected = preferredStreets.includes(s)
-              return (
+      {/* Floor Level */}
+      <div>
+        <label className={labelCls}>Floor Level <span className="text-zinc-500 font-normal">(optional)</span></label>
+        <input
+          type="number"
+          min={0}
+          value={form.floor_level}
+          onChange={(e) => set('floor_level', e.target.value === '' ? '' : parseInt(e.target.value))}
+          placeholder="e.g. 2"
+          className={inputCls}
+        />
+      </div>
+
+      {/* Furnished */}
+      <div>
+        <label className={labelCls}>Furnished</label>
+        <div className="grid grid-cols-3 gap-2">
+          {FURNISHED_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => handleFurnishedLevel(opt.value)}
+              className={`py-2 px-3 rounded-xl text-xs font-semibold border transition-colors ${
+                furnishedLevel === opt.value
+                  ? 'bg-indigo-600 border-indigo-500 text-white'
+                  : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-500'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Amenities — both types */}
+      <div>
+        <label className={labelCls}>Amenities</label>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          {AMENITIES.map((a) => {
+            const selected = selectedAmenities.includes(a)
+            return (
+              <div key={a} className="flex flex-col gap-1">
                 <button
-                  key={s}
                   type="button"
-                  onClick={() => toggleStreet(s)}
+                  onClick={() => toggleAmenity(a)}
                   className={`flex items-center gap-2 py-2 px-3 rounded-xl text-xs font-medium border transition-colors text-left ${
                     selected
                       ? 'bg-indigo-600/20 border-indigo-500 text-indigo-200'
@@ -351,101 +420,54 @@ export default function ListingForm({ initial, onSubmit, submitLabel, extraActio
                   }`}
                 >
                   <CheckBadge on={selected} />
-                  {s}
+                  {a}
                 </button>
-              )
-            })}
-          </div>
-        </div>
-      ) : (
-        <div>
-          <label className={labelCls}>Location *</label>
-          <LocationPicker
-            onLocationSelect={(address, lat, lng) => {
-              set('address', address)
-              set('latitude', lat)
-              set('longitude', lng)
-            }}
-            initialAddress={form.address}
-            initialLat={form.latitude}
-            initialLng={form.longitude}
-          />
-        </div>
-      )}
-
-      {/* Available date + Lease */}
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className={labelCls}>Available Date</label>
-          <input
-            type="date"
-            value={form.available_date}
-            onChange={(e) => set('available_date', e.target.value)}
-            className={inputCls}
-          />
-        </div>
-        <div>
-          <label className={labelCls}>Lease Duration</label>
-          <select
-            value={form.lease_duration_months}
-            onChange={(e) => set('lease_duration_months', parseInt(e.target.value))}
-            className={inputCls}
-          >
-            <option value={1}>1 month</option>
-            <option value={3}>3 months</option>
-            <option value={6}>6 months</option>
-            <option value={12}>12 months</option>
-          </select>
+                {/* Washer/Dryer sub-toggle */}
+                {a === 'Washer/Dryer' && selected && (
+                  <div className="flex gap-1 pl-1">
+                    {['Paid', 'Free'].map((opt) => (
+                      <button
+                        key={opt}
+                        type="button"
+                        onClick={() => setWasherOption(opt)}
+                        className={`flex-1 py-1 rounded-lg text-xs font-medium border transition-colors ${
+                          amenityOptions['Washer/Dryer'] === opt
+                            ? 'bg-indigo-600 border-indigo-500 text-white'
+                            : 'bg-zinc-800 border-zinc-600 text-zinc-400 hover:border-zinc-500'
+                        }`}
+                      >
+                        {opt}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
       </div>
 
-      {/* Furnished level + Amenities — hide for roommate needed */}
-      {!isRoommate && (
-        <>
-          <div>
-            <label className={labelCls}>Furnished</label>
-            <div className="grid grid-cols-3 gap-2">
-              {FURNISHED_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => handleFurnishedLevel(opt.value)}
-                  className={`py-2 px-3 rounded-xl text-xs font-semibold border transition-colors ${
-                    furnishedLevel === opt.value
-                      ? 'bg-indigo-600 border-indigo-500 text-white'
-                      : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-500'
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
+      {/* Food Preference — Sublease only */}
+      {form.type === 'sublease' && (
+        <div>
+          <label className={labelCls}>Food Preference</label>
+          <div className="grid grid-cols-2 gap-2">
+            {FOOD_PREFERENCES.map((f) => (
+              <button
+                key={f}
+                type="button"
+                onClick={() => set('food_preference', form.food_preference === f ? '' : f)}
+                className={`py-2 px-3 rounded-xl text-xs font-semibold border transition-colors ${
+                  form.food_preference === f
+                    ? 'bg-indigo-600 border-indigo-500 text-white'
+                    : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-500'
+                }`}
+              >
+                {f}
+              </button>
+            ))}
           </div>
-
-          <div>
-            <label className={labelCls}>Amenities & Utilities</label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {AMENITIES.map((a) => {
-                const selected = amenities.includes(a)
-                return (
-                  <button
-                    key={a}
-                    type="button"
-                    onClick={() => toggleAmenity(a)}
-                    className={`flex items-center gap-2 py-2 px-3 rounded-xl text-xs font-medium border transition-colors text-left ${
-                      selected
-                        ? 'bg-indigo-600/20 border-indigo-500 text-indigo-200'
-                        : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-500'
-                    }`}
-                  >
-                    <CheckBadge on={selected} />
-                    {a}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        </>
+        </div>
       )}
 
       {/* Gender preference */}
@@ -475,11 +497,7 @@ export default function ListingForm({ initial, onSubmit, submitLabel, extraActio
         <textarea
           value={form.description}
           onChange={(e) => set('description', e.target.value)}
-          placeholder={
-            isRoommate
-              ? 'Tell people about yourself — year, major, lifestyle, schedule...'
-              : 'Tell people about the place — nearby bus stops, amenities, vibe...'
-          }
+          placeholder="Tell people about the place — nearby bus stops, amenities, vibe..."
           rows={4}
           className={`${inputCls} resize-none`}
         />
