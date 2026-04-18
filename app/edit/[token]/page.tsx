@@ -15,11 +15,18 @@ export default function EditPage() {
   const [filling, setFilling] = useState(false)
 
   useEffect(() => {
-    // Fetch listing by edit token via the supabase client (token is private, handled server-side)
-    fetch(`/api/listings/edit/${token}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then(setListing)
-      .catch(() => setNotFound(true))
+    import('@/lib/supabase').then(({ createClient }) => {
+      createClient().auth.getUser().then(({ data }) => {
+        if (!data.user) {
+          router.replace(`/login?next=/edit/${token}`)
+          return
+        }
+        fetch(`/api/listings/edit/${token}`)
+          .then((r) => (r.ok ? r.json() : Promise.reject()))
+          .then(setListing)
+          .catch(() => setNotFound(true))
+      })
+    })
   }, [token])
 
   const handleUpdate = async (data: ListingFormData) => {

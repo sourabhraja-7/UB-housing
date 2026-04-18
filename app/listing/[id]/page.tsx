@@ -17,7 +17,6 @@ async function getListing(id: string): Promise<Listing | null> {
 const TYPE_BADGE: Record<string, string> = {
   room_available: 'bg-green-500/20 text-green-400 border-green-500/30',
   sublease: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-  roommate_needed: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
 }
 
 export default async function ListingDetailPage({ params }: { params: { id: string } }) {
@@ -62,16 +61,54 @@ export default async function ListingDetailPage({ params }: { params: { id: stri
 
         {/* Details */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 grid grid-cols-2 gap-4">
-          <Detail label="Bedrooms" value={`${listing.bedrooms} bed`} />
-          <Detail label="Bathrooms" value={`${listing.bathrooms} bath`} />
-          {listing.available_date && <Detail label="Available" value={formatDate(listing.available_date)} />}
-          {listing.lease_duration_months && <Detail label="Lease" value={`${listing.lease_duration_months} months`} />}
-          <Detail label="Furnished" value={listing.furnished ? 'Yes' : 'No'} />
+          {listing.type !== 'sublease' && listing.bedrooms != null && (
+            <Detail label="Bedrooms" value={`${listing.bedrooms} bed`} />
+          )}
+          {listing.bathrooms != null && (
+            <Detail label="Bathrooms" value={`${listing.bathrooms} bath`} />
+          )}
+          {listing.type === 'sublease' && listing.available_date && listing.sublease_end_date ? (
+            <Detail label="Sublease Period" value={`${formatDate(listing.available_date)} → ${formatDate(listing.sublease_end_date)} (${listing.lease_duration_months} mo)`} />
+          ) : (
+            <>
+              {listing.available_date && <Detail label="Available" value={formatDate(listing.available_date)} />}
+              {listing.lease_duration_months && <Detail label="Lease" value={`${listing.lease_duration_months} months`} />}
+            </>
+          )}
+          <Detail label="Furnished" value={listing.furnished ? 'Furnished' : 'Not Furnished'} />
           <Detail label="Utilities" value={listing.utilities_included ? 'Included' : 'Not included'} />
-          {listing.gender_preference !== 'any' && (
-            <Detail label="Preference" value={listing.gender_preference === 'male' ? 'Male preferred' : 'Female preferred'} />
+          {listing.floor_level != null && (
+            <Detail label="Floor Level" value={`Floor ${listing.floor_level}`} />
+          )}
+          <Detail
+            label="Gender Preference"
+            value={
+              listing.gender_preference === 'male' ? 'Male preferred'
+              : listing.gender_preference === 'female' ? 'Female preferred'
+              : 'No preference'
+            }
+          />
+          {listing.type === 'sublease' && listing.food_preference && (
+            <Detail label="Food Preference" value={listing.food_preference} />
           )}
         </div>
+
+        {/* Amenities */}
+        {listing.amenities && listing.amenities.length > 0 && (
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
+            <p className="text-xs text-zinc-500 uppercase tracking-wide mb-3">Amenities</p>
+            <div className="flex flex-wrap gap-2">
+              {listing.amenities.map((amenity) => (
+                <span
+                  key={amenity}
+                  className="text-xs font-medium px-3 py-1 rounded-full bg-zinc-800 text-zinc-300 border border-zinc-700"
+                >
+                  {amenity}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Address */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">

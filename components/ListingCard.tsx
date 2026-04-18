@@ -13,7 +13,6 @@ interface ListingCardProps {
 const TYPE_BG: Record<string, string> = {
   room_available: 'bg-green-500/20 text-green-400 border-green-500/30',
   sublease: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-  roommate_needed: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
 }
 
 function formatWalk(walkInfo: WalkInfo) {
@@ -69,11 +68,17 @@ export default function ListingCard({ listing, walkInfo, onClose }: ListingCardP
       {/* Details grid */}
       <div className="grid grid-cols-2 gap-1.5 text-xs text-zinc-400 mb-3">
         <span>🛏 {listing.bedrooms} bed · {listing.bathrooms} bath</span>
-        {listing.available_date && (
-          <span>📅 Avail. {formatDate(listing.available_date)}</span>
-        )}
-        {listing.lease_duration_months && (
-          <span>⏱ {listing.lease_duration_months} month lease</span>
+        {listing.type === 'sublease' && listing.available_date && listing.sublease_end_date ? (
+          <span className="col-span-2">📅 {formatDate(listing.available_date)} → {formatDate(listing.sublease_end_date)} · {listing.lease_duration_months} mo</span>
+        ) : (
+          <>
+            {listing.available_date && (
+              <span>📅 Avail. {formatDate(listing.available_date)}</span>
+            )}
+            {listing.lease_duration_months && (
+              <span>⏱ {listing.lease_duration_months} month lease</span>
+            )}
+          </>
         )}
         {listing.furnished && <span>🛋 Furnished</span>}
         {listing.utilities_included && <span>💡 Utilities incl.</span>}

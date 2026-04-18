@@ -2,11 +2,20 @@
 
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { useEffect } from 'react'
 import ListingForm from '@/components/ListingForm'
 import { ListingFormData } from '@/lib/types'
+import { createClient } from '@/lib/supabase'
 
 export default function PostPage() {
   const router = useRouter()
+  const supabase = createClient()
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (!data.user) router.replace('/login?next=/post')
+    })
+  }, [])
 
   const handleSubmit = async (data: ListingFormData) => {
     const res = await fetch('/api/listings', {
