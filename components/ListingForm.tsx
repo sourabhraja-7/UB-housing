@@ -96,8 +96,28 @@ export default function ListingForm({ initial, onSubmit, submitLabel, extraActio
   const [furnishedLevel, setFurnishedLevel] = useState<FurnishedLevel>(
     initial?.furnished ? 'full' : 'none'
   )
-  const [selectedAmenities, setSelectedAmenities] = useState<string[]>([])
-  const [amenityOptions, setAmenityOptions] = useState<Record<string, string>>({})
+  const parseSavedAmenities = (arr?: string[]) => {
+    const names: string[] = []
+    const options: Record<string, string> = {}
+    if (!arr) return { names, options }
+    const re = /^(.+?) \((.+)\)$/
+    for (const a of arr) {
+      const m = a.match(re)
+      if (m) {
+        names.push(m[1])
+        options[m[1]] = m[2]
+      } else {
+        names.push(a)
+      }
+    }
+    return { names, options }
+  }
+  const [selectedAmenities, setSelectedAmenities] = useState<string[]>(
+    () => parseSavedAmenities(initial?.amenities).names
+  )
+  const [amenityOptions, setAmenityOptions] = useState<Record<string, string>>(
+    () => parseSavedAmenities(initial?.amenities).options
+  )
   const [countryIdx, setCountryIdx] = useState(0)
   const [countryOpen, setCountryOpen] = useState(false)
   const countryRef = useRef<HTMLDivElement>(null)
@@ -587,9 +607,24 @@ export default function ListingForm({ initial, onSubmit, submitLabel, extraActio
         <button
           type="submit"
           disabled={loading}
-          className="flex-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-semibold py-3 rounded-xl transition-colors"
+          className="group flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:from-indigo-600 disabled:hover:to-indigo-500 text-white font-semibold py-3 rounded-xl shadow-lg shadow-indigo-600/25 hover:shadow-indigo-600/40 transition-all duration-200 active:scale-[0.98]"
         >
-          {loading ? 'Saving...' : submitLabel}
+          {loading ? (
+            <>
+              <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.3" />
+                <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+              </svg>
+              <span>Saving...</span>
+            </>
+          ) : (
+            <>
+              <span>{submitLabel}</span>
+              <svg className="w-4 h-4 transition-transform group-hover:translate-x-0.5" viewBox="0 0 24 24" fill="none">
+                <path d="M5 12h14M13 5l7 7-7 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </>
+          )}
         </button>
         {extraActions}
       </div>

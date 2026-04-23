@@ -33,6 +33,12 @@ export async function PUT(
   const body = await req.json()
   const { id, edit_token, created_at, expires_at, user_id, ...updateFields } = body
 
+  const intFields = ['floor_level', 'lease_duration_months', 'bedrooms', 'bathrooms', 'rent']
+  const dateFields = ['available_date', 'sublease_end_date']
+  for (const field of [...intFields, ...dateFields]) {
+    if (updateFields[field] === '') updateFields[field] = null
+  }
+
   const { data, error } = await supabase
     .from('listings')
     .update(updateFields)

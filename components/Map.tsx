@@ -85,9 +85,12 @@ function buildListingPin(color: string, selected: boolean, count: number = 1): H
   return wrapper
 }
 
-function buildBusStopPin(): HTMLElement {
-  const el = document.createElement('div')
-  el.style.cssText = `
+function buildBusStopPin(name: string): HTMLElement {
+  const container = document.createElement('div')
+  container.style.cssText = `position: relative; width: 50px; height: 50px;`
+
+  const pin = document.createElement('div')
+  pin.style.cssText = `
     width: 50px;
     height: 50px;
     box-sizing: border-box;
@@ -100,11 +103,11 @@ function buildBusStopPin(): HTMLElement {
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transform-origin: bottom center;
+    transform-origin: center;
     transition: transform 0.15s ease, box-shadow 0.15s ease;
     will-change: transform;
   `
-  el.innerHTML = `
+  pin.innerHTML = `
     <svg width="20" height="20" viewBox="0 0 24 24" fill="#ffffff" style="margin-top: 2px;">
       <path d="M4 16c0 .88.39 1.67 1 2.22V20c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h8v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1.78c.61-.55 1-1.34 1-2.22V6c0-3.5-3.58-4-8-4s-8 .5-8 4v10zm3.5 1c-.83 0-1.5-.67-1.5-1.5S6.67 14 7.5 14s1.5.67 1.5 1.5S8.33 17 7.5 17zm9 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm1.5-6H6V6h12v5z"/>
     </svg>
@@ -119,15 +122,71 @@ function buildBusStopPin(): HTMLElement {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
     ">UB</span>
   `
-  el.addEventListener('mouseenter', () => {
-    el.style.transform = 'scale(1.12)'
-    el.style.boxShadow = '0 6px 20px rgba(0,0,0,0.6), 0 0 0 2px rgba(59,130,246,0.5)'
+  pin.addEventListener('mouseenter', () => {
+    pin.style.transform = 'scale(1.12)'
+    pin.style.boxShadow = '0 6px 20px rgba(0,0,0,0.6), 0 0 0 2px rgba(59,130,246,0.5)'
   })
-  el.addEventListener('mouseleave', () => {
-    el.style.transform = 'scale(1)'
-    el.style.boxShadow = '0 4px 14px rgba(0,0,0,0.55), 0 0 0 1px rgba(59,130,246,0.35)'
+  pin.addEventListener('mouseleave', () => {
+    pin.style.transform = 'scale(1)'
+    pin.style.boxShadow = '0 4px 14px rgba(0,0,0,0.55), 0 0 0 1px rgba(59,130,246,0.35)'
   })
-  return el
+
+  const tooltip = document.createElement('div')
+  tooltip.dataset.busTooltip = 'true'
+  tooltip.style.cssText = `
+    position: absolute;
+    bottom: calc(100% + 10px);
+    left: 50%;
+    transform: translateX(-50%) translateY(4px);
+    background: rgba(24, 24, 27, 0.95);
+    color: #ffffff;
+    padding: 7px 12px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
+    letter-spacing: 0.2px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.18s ease, transform 0.18s ease;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    z-index: 2;
+  `
+  const label = document.createElement('span')
+  label.textContent = name
+  tooltip.appendChild(label)
+
+  const arrow = document.createElement('div')
+  arrow.style.cssText = `
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0;
+    height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 6px solid rgba(24, 24, 27, 0.95);
+  `
+  tooltip.appendChild(arrow)
+
+  container.appendChild(pin)
+  container.appendChild(tooltip)
+  return container
+}
+
+function showBusTooltip(el: HTMLElement) {
+  el.style.opacity = '1'
+  el.style.transform = 'translateX(-50%) translateY(0)'
+}
+
+function hideBusTooltip(el: HTMLElement) {
+  el.style.opacity = '0'
+  el.style.transform = 'translateX(-50%) translateY(4px)'
 }
 
 export default function Map({ listings, onPinClick, selectedId }: MapProps) {
@@ -136,6 +195,7 @@ export default function Map({ listings, onPinClick, selectedId }: MapProps) {
   const markers = useRef<google.maps.marker.AdvancedMarkerElement[]>([])
   const routeRenderer = useRef<google.maps.DirectionsRenderer | null>(null)
   const directionsService = useRef<google.maps.DirectionsService | null>(null)
+  const activeBusTooltip = useRef<HTMLElement | null>(null)
   const [mapReady, setMapReady] = useState(0)
   const [theme, setTheme] = useState<MapTheme>('dark')
 
@@ -205,6 +265,7 @@ export default function Map({ listings, onPinClick, selectedId }: MapProps) {
     map.current = null
     clearMarkers()
     clearRoute()
+    activeBusTooltip.current = null
 
     loadGoogleMaps().then(() => {
       if (cancelled || !mapContainer.current) return
@@ -227,16 +288,32 @@ export default function Map({ listings, onPinClick, selectedId }: MapProps) {
       directionsService.current = new google.maps.DirectionsService()
 
       BUS_STOPS.forEach((stop) => {
+        const pinElement = buildBusStopPin(stop.name)
+        const tooltip = pinElement.querySelector<HTMLElement>('[data-bus-tooltip]')
         const busMarker = new google.maps.marker.AdvancedMarkerElement({
           map: map.current!,
           position: { lat: stop.lat, lng: stop.lng },
-          content: buildBusStopPin(),
+          content: pinElement,
           title: `${stop.name} — Bus Stop`,
         })
-        const busInfo = new google.maps.InfoWindow({
-          content: `<div style="color:#111;font-size:12px;font-weight:600;padding:2px 4px;">${stop.name}<br/>Bus Stop</div>`,
+        busMarker.addListener('click', () => {
+          if (!tooltip) return
+          if (activeBusTooltip.current === tooltip) {
+            hideBusTooltip(tooltip)
+            activeBusTooltip.current = null
+            return
+          }
+          if (activeBusTooltip.current) hideBusTooltip(activeBusTooltip.current)
+          showBusTooltip(tooltip)
+          activeBusTooltip.current = tooltip
         })
-        busMarker.addListener('click', () => busInfo.open({ map: map.current!, anchor: busMarker }))
+      })
+
+      map.current.addListener('click', () => {
+        if (activeBusTooltip.current) {
+          hideBusTooltip(activeBusTooltip.current)
+          activeBusTooltip.current = null
+        }
       })
 
       setMapReady(n => n + 1)
@@ -274,6 +351,10 @@ export default function Map({ listings, onPinClick, selectedId }: MapProps) {
         content: buildListingPin(color, isSelected, cluster.length),
       })
       marker.addListener('click', async () => {
+        if (activeBusTooltip.current) {
+          hideBusTooltip(activeBusTooltip.current)
+          activeBusTooltip.current = null
+        }
         clearRoute()
         const walkInfo = await fetchAndDrawRoute(first)
         onPinClick(cluster, walkInfo)
@@ -290,7 +371,7 @@ export default function Map({ listings, onPinClick, selectedId }: MapProps) {
         onClick={toggleTheme}
         aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
         title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-        className="absolute top-4 right-4 z-10 w-10 h-10 flex items-center justify-center rounded-xl bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-700 backdrop-blur shadow-xl text-lg transition-colors"
+        className="absolute top-8 left-4 z-10 w-10 h-10 flex items-center justify-center rounded-xl bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-700 backdrop-blur shadow-xl text-lg transition-colors"
       >
         {theme === 'dark' ? '☀️' : '🌙'}
       </button>

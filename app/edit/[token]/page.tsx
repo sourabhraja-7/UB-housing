@@ -12,7 +12,6 @@ export default function EditPage() {
   const [listing, setListing] = useState<Listing | null>(null)
   const [notFound, setNotFound] = useState(false)
   const [deleting, setDeleting] = useState(false)
-  const [filling, setFilling] = useState(false)
 
   useEffect(() => {
     import('@/lib/supabase').then(({ createClient }) => {
@@ -40,13 +39,6 @@ export default function EditPage() {
       throw new Error(err.error || 'Failed to update')
     }
     router.push(`/listing/${listing!.id}`)
-  }
-
-  const handleMarkFilled = async () => {
-    if (!confirm('Mark this listing as filled? It will be removed from the map.')) return
-    setFilling(true)
-    await fetch(`/api/listings/edit/${token}`, { method: 'DELETE' })
-    router.push('/')
   }
 
   const handleDelete = async () => {
@@ -89,10 +81,14 @@ export default function EditPage() {
     utilities_included: listing.utilities_included,
     gender_preference: listing.gender_preference,
     available_date: listing.available_date || '',
+    sublease_end_date: listing.sublease_end_date || '',
     lease_duration_months: listing.lease_duration_months || 12,
     contact_phone: listing.contact_phone,
     contact_name: listing.contact_name,
     photos: listing.photos,
+    amenities: listing.amenities || [],
+    floor_level: listing.floor_level ?? '',
+    food_preference: listing.food_preference || '',
   }
 
   return (
@@ -108,24 +104,14 @@ export default function EditPage() {
           onSubmit={handleUpdate}
           submitLabel="Update Listing"
           extraActions={
-            <div className="flex gap-2 flex-col sm:flex-row w-full">
-              <button
-                type="button"
-                onClick={handleMarkFilled}
-                disabled={filling}
-                className="flex-1 bg-zinc-800 hover:bg-amber-900/40 border border-zinc-700 hover:border-amber-700 text-zinc-300 hover:text-amber-400 font-semibold py-3 rounded-xl transition-colors text-sm"
-              >
-                {filling ? 'Marking...' : 'Mark as Filled'}
-              </button>
-              <button
-                type="button"
-                onClick={handleDelete}
-                disabled={deleting}
-                className="flex-1 bg-zinc-800 hover:bg-red-900/40 border border-zinc-700 hover:border-red-700 text-zinc-300 hover:text-red-400 font-semibold py-3 rounded-xl transition-colors text-sm"
-              >
-                {deleting ? 'Deleting...' : 'Delete'}
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={deleting}
+              className="flex-1 bg-zinc-800 hover:bg-red-900/40 border border-zinc-700 hover:border-red-700 text-zinc-300 hover:text-red-400 font-semibold py-3 rounded-xl transition-colors text-sm"
+            >
+              {deleting ? 'Deleting...' : 'Delete'}
+            </button>
           }
         />
       </div>

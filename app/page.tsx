@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -90,6 +90,8 @@ export default function HomePage() {
   const [cluster, setCluster] = useState<Listing[] | null>(null)
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS)
   const [user, setUser] = useState<any>(null)
+  const [profileOpen, setProfileOpen] = useState(false)
+  const profileRef = useRef<HTMLDivElement>(null)
   const router = useRouter()
   const supabase = createClient()
 
@@ -97,11 +99,29 @@ export default function HomePage() {
     supabase.auth.getUser().then(({ data }) => setUser(data.user))
   }, [])
 
+  useEffect(() => {
+    if (!profileOpen) return
+    const onClick = (e: MouseEvent) => {
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
+        setProfileOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onClick)
+    return () => document.removeEventListener('mousedown', onClick)
+  }, [profileOpen])
+
   const handleLogout = async () => {
+    setProfileOpen(false)
     await supabase.auth.signOut()
     setUser(null)
     router.refresh()
   }
+
+  const avatarUrl: string | undefined =
+    user?.user_metadata?.avatar_url || user?.user_metadata?.picture
+  const displayName: string =
+    user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email || ''
+  const initial = displayName.trim().charAt(0).toUpperCase() || 'U'
 
   const fetchListings = useCallback(async () => {
     try {
@@ -155,35 +175,75 @@ export default function HomePage() {
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-zinc-950">
       {/* Top bar */}
-      <div className="absolute top-0 left-0 right-0 z-10">
-        <div className="flex items-center justify-between px-4 py-3 bg-zinc-900/95 backdrop-blur border-b border-zinc-800">
+      <div className="absolute top-0 left-0 right-0 z-40">
+        <div className="relative z-10 flex items-center justify-between px-4 py-3 bg-zinc-900/95 backdrop-blur border-b border-zinc-800">
           <div>
             <span className="text-white font-bold text-lg tracking-tight">UB Housing</span>
             <span className="text-zinc-500 text-xs ml-2 hidden sm:inline">University at Buffalo</span>
           </div>
           <div className="flex items-center gap-2">
-            {user && (
-              <>
-                <Link
-                  href="/my-listings"
-                  className="text-zinc-400 hover:text-white text-sm transition-colors hidden sm:inline"
-                >
-                  My Listings
-                </Link>
-                <button
-                  onClick={handleLogout}
-                  className="text-zinc-400 hover:text-white text-sm transition-colors"
-                >
-                  Logout
-                </button>
-              </>
-            )}
             <Link
               href={user ? '/post' : '/login?next=/post'}
               className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors"
             >
               + Post Listing
             </Link>
+            {user && (
+              <div ref={profileRef} className="relative">
+                <button
+                  type="button"
+                  onClick={() => setProfileOpen((o) => !o)}
+                  aria-label="Profile menu"
+                  className="w-10 h-10 rounded-full overflow-hidden bg-zinc-800 border border-zinc-700 hover:border-indigo-500 flex items-center justify-center transition-colors"
+                >
+                  {avatarUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={avatarUrl}
+                      alt={displayName}
+                      referrerPolicy="no-referrer"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <span className="text-white text-sm font-semibold">{initial}</span>
+                  )}
+                </button>
+
+                {profileOpen && (
+                  <div className="absolute right-0 top-full mt-2 w-56 bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl overflow-hidden z-30">
+                    <div className="px-4 py-3 border-b border-zinc-800">
+                      <p className="text-white text-sm font-semibold truncate">{displayName || 'Signed in'}</p>
+                      {user.email && displayName !== user.email && (
+                        <p className="text-zinc-500 text-xs truncate">{user.email}</p>
+                      )}
+                    </div>
+                    <Link
+                      href="/my-listings"
+                      onClick={() => setProfileOpen(false)}
+                      className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-zinc-200 hover:bg-zinc-800 transition-colors"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                        <polyline points="9 22 9 12 15 12 15 22" />
+                      </svg>
+                      My Listings
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-400 hover:bg-zinc-800 transition-colors"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                        <polyline points="16 17 21 12 16 7" />
+                        <line x1="21" y1="12" x2="9" y2="12" />
+                      </svg>
+                      Logout
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
         <FilterBar filters={filters} onChange={setFilters} count={listings.length} />
